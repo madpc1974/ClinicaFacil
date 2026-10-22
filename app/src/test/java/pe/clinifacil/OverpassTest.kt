@@ -51,6 +51,24 @@ class OverpassTest {
         assertTrue(Overpass.parsear("""{"elements":[]}""", 0.0, 0.0, "", emptyList()).isEmpty())
     }
 
+    @Test fun acentos_y_mayusculas_no_impiden_el_filtro() {
+        val j = """{"elements":[{"type":"node","lat":-12.05,"lon":-77.04,"tags":{"name":"PEDIATRÍA INFANTIL SAN JOSÉ"}}]}"""
+        val (osm, claves) = Overpass.ESPECIALIDADES["Pediatría"]!!
+        assertEquals(1, Overpass.parsear(j, -12.0464, -77.0428, osm, claves).size)
+    }
+
+    @Test fun etiqueta_pediatrics_en_ingles_americano() {
+        val j = """{"elements":[{"type":"node","lat":-12.05,"lon":-77.04,"tags":{"name":"Centro Vida","healthcare:speciality":"pediatrics"}}]}"""
+        val (osm, claves) = Overpass.ESPECIALIDADES["Pediatría"]!!
+        assertEquals(1, Overpass.parsear(j, -12.0464, -77.0428, osm, claves).size)
+    }
+
+    @Test fun odontologia_por_amenity_dentist_sin_palabras_en_el_nombre() {
+        val j = """{"elements":[{"type":"node","lat":-12.05,"lon":-77.04,"tags":{"amenity":"dentist","name":"Sonrisas"}}]}"""
+        val (osm, claves) = Overpass.ESPECIALIDADES["Odontología"]!!
+        assertEquals(1, Overpass.parsear(j, -12.0464, -77.0428, osm, claves).size)
+    }
+
     @Test fun consulta_real_miraflores() {
         val r = try { Overpass.buscar(-12.1211, -77.0297, 5, "Todas las especialidades") }
                 catch (e: Exception) { info("REAL ERROR: ${e.message}"); throw e }
@@ -59,6 +77,7 @@ class OverpassTest {
         assertTrue("Overpass devolvio 0 resultados", r.isNotEmpty())
         assertTrue(r.zipWithNext().all { it.first.km <= it.second.km })
         assertTrue(r.all { it.km <= 5.5f })
+        assertTrue(r.size <= 100)
         for (esp in listOf("Pediatría", "Cardiología", "Odontología")) {
             val x = Overpass.buscar(-12.1211, -77.0297, 5, esp)
             info("REAL Miraflores 5 km, $esp: ${x.size} resultados")

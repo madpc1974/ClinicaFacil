@@ -16,17 +16,17 @@ object Overpass {
     val ESPECIALIDADES = linkedMapOf(
         "Todas las especialidades" to Pair("", listOf<String>()),
         "Medicina general" to Pair("general", listOf("general", "familiar", "medicina")),
-        "Pediatría" to Pair("paediatrics", listOf("pediat", "niño")),
-        "Ginecología" to Pair("gynaecology", listOf("gineco", "obstet", "materno")),
+        "Pediatría" to Pair("paediatrics|pediatrics", listOf("pediat", "niño")),
+        "Ginecología" to Pair("gynaecology|gynecology|obstetrics", listOf("gineco", "obstet", "materno")),
         "Cardiología" to Pair("cardiology", listOf("cardio", "corazón")),
         "Dermatología" to Pair("dermatology", listOf("dermat", "piel")),
-        "Traumatología" to Pair("orthopaedics", listOf("trauma", "ortoped")),
+        "Traumatología" to Pair("orthopaedics|orthopedics|traumatology", listOf("trauma", "ortoped")),
         "Oftalmología" to Pair("ophthalmology", listOf("oftalm", "ojos", "visión")),
-        "Odontología" to Pair("dentist", listOf("odonto", "dental", "dentista")),
-        "Psicología / Psiquiatría" to Pair("psychiatry", listOf("psico", "psiqui", "mental")),
+        "Odontología" to Pair("dentist|dental", listOf("odonto", "dental", "dentista")),
+        "Psicología / Psiquiatría" to Pair("psychiatry|psychology", listOf("psico", "psiqui", "mental")),
         "Urología" to Pair("urology", listOf("urolog")),
         "Oncología" to Pair("oncology", listOf("oncol", "cáncer", "neoplás")),
-        "Laboratorio / Imágenes" to Pair("radiology", listOf("laborat", "imágenes", "radiolog", "diagnóst"))
+        "Laboratorio / Imágenes" to Pair("radiology|laboratory", listOf("laborat", "imágenes", "radiolog", "diagnóst"))
     )
 
     val SERVIDORES = listOf(
@@ -36,7 +36,7 @@ object Overpass {
     )
 
     fun consulta(lat: Double, lon: Double, radioM: Int): String =
-        "[out:json][timeout:25];nwr[\"amenity\"~\"clinic|hospital|doctors|dentist\"](around:$radioM,$lat,$lon);out center 150;"
+        "[out:json][timeout:25];nwr[\"amenity\"~\"clinic|hospital|doctors|dentist\"](around:$radioM,$lat,$lon);out center 1000;"
 
     fun distanciaKm(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
         val dLat = Math.toRadians(lat2 - lat1)
@@ -44,6 +44,9 @@ object Overpass {
         val a = sin(dLat / 2).pow(2) + cos(Math.toRadians(lat1)) * cos(Math.toRadians(lat2)) * sin(dLon / 2).pow(2)
         return 2 * 6371.0 * asin(sqrt(a))
     }
+
+    private fun norm(s: String): String =
+        java.text.Normalizer.normalize(s.lowercase(), java.text.Normalizer.Form.NFD).replace(Regex("\\p{M}+"), "")
 
     fun parsear(json: String, lat: Double, lon: Double, espOsm: String, claves: List<String>): List<Clinica> {
         val arr = JSONObject(json).optJSONArray("elements") ?: return emptyList()
@@ -57,7 +60,9 @@ object Overpass {
             if (la.isNaN() || lo.isNaN()) continue
             val nombre = t.optString("name", "").ifEmpty { "Centro de salud" }
             val esp = t.optString("healthcare:speciality", "")
-            if (espOsm.isNotEmpty() && !(esp.contains(espOsm) || claves.any { nombre.lowercase().contains(it) })) continue
+            val etiquetas = norm(esp + " " + t.optString("amenity", "") + " " + t.optString("healthcare", ""))
+            val nombreN = norm(nombre)
+            if (espOsm.isNotEmpty() && !(espOsm.split("|").any { etiquetas.contains(it) } || claves.any { nombreN.contains(norm(it)) })) continue
             val dir = listOf(t.optString("addr:street", ""), t.optString("addr:housenumber", "")).filter { it.isNotEmpty() }.joinToString(" ")
             out.add(Clinica(nombre, dir, la, lo, distanciaKm(lat, lon, la, lo).toFloat()))
         }
@@ -90,6 +95,6 @@ object Overpass {
 
     fun buscar(lat: Double, lon: Double, radioKm: Int, especialidad: String): List<Clinica> {
         val (osm, claves) = ESPECIALIDADES[especialidad] ?: Pair("", emptyList<String>())
-        return parsear(descargar(consulta(lat, lon, radioKm * 1000)), lat, lon, osm, claves)
+        return parsear(descargar(consulta(lat, lon, radioKm * 1000)), lat, lon, osm, claves).take(100)
     }
 }
