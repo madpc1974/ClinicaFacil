@@ -14,30 +14,9 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
-import org.json.JSONObject
-import java.net.HttpURLConnection
-import java.net.URL
-import java.net.URLEncoder
 
-data class Clinica(val nombre: String, val detalle: String, val lat: Double, val lon: Double, val km: Float)
 
 class MainActivity : AppCompatActivity() {
-    // etiqueta -> (valor OSM healthcare:speciality, palabras clave en el nombre)
-    private val especialidades = linkedMapOf(
-        "Todas las especialidades" to Pair("", listOf<String>()),
-        "Medicina general" to Pair("general", listOf("general", "familiar", "medicina")),
-        "Pediatría" to Pair("paediatrics", listOf("pediat", "niño")),
-        "Ginecología" to Pair("gynaecology", listOf("gineco", "obstet", "materno")),
-        "Cardiología" to Pair("cardiology", listOf("cardio", "corazón")),
-        "Dermatología" to Pair("dermatology", listOf("dermat", "piel")),
-        "Traumatología" to Pair("orthopaedics", listOf("trauma", "ortoped")),
-        "Oftalmología" to Pair("ophthalmology", listOf("oftalm", "ojos", "visión")),
-        "Odontología" to Pair("dentist", listOf("odonto", "dental", "dentista")),
-        "Psicología / Psiquiatría" to Pair("psychiatry", listOf("psico", "psiqui", "mental")),
-        "Urología" to Pair("urology", listOf("urolog")),
-        "Oncología" to Pair("oncology", listOf("oncol", "cáncer", "neoplás")),
-        "Laboratorio / Imágenes" to Pair("radiology", listOf("laborat", "imágenes", "radiolog", "diagnóst"))
-    )
     private lateinit var lista: ListView
     private lateinit var estado: TextView
     private lateinit var spEsp: Spinner
@@ -52,7 +31,7 @@ class MainActivity : AppCompatActivity() {
         lista = findViewById(R.id.lista); estado = findViewById(R.id.tvEstado)
         spEsp = findViewById(R.id.spEsp); sbRadio = findViewById(R.id.sbRadio)
         val tvRadio = findViewById<TextView>(R.id.tvRadio)
-        spEsp.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, especialidades.keys.toList())
+        spEsp.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, Overpass.ESPECIALIDADES.keys.toList())
         tvRadio.text = "Radio de búsqueda: ${radioKm()} km"
         sbRadio.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(b: SeekBar?, p: Int, u: Boolean) { tvRadio.text = "Radio de búsqueda: ${radioKm()} km" }
@@ -113,32 +92,14 @@ class MainActivity : AppCompatActivity() {
 
     private fun consultar(loc: Location) {
         runOnUiThread { estado.text = "Buscando clínicas…" }
-        val (osm, claves) = especialidades[spEsp.selectedItem as String]!!
-        val r = radioKm() * 1000
-        val q = "[out:json][timeout:25];nwr[\"amenity\"~\"clinic|hospital|doctors|dentist\"](around:$r,${loc.latitude},${loc.longitude});out center 150;"
+        val esp = spEsp.selectedItem as String
+        val km = radioKm()
         Thread {
             try {
-                val c = URL("https://overpass-api.de/api/interpreter").openConnection() as HttpURLConnection
-                c.requestMethod = "POST"; c.doOutput = true; c.connectTimeout = 15000; c.readTimeout = 30000
-                c.outputStream.write(("data=" + URLEncoder.encode(q, "UTF-8")).toByteArray())
-                val arr = JSONObject(c.inputStream.bufferedReader().readText()).getJSONArray("elements")
-                val out = mutableListOf<Clinica>()
-                for (i in 0 until arr.length()) {
-                    val e = arr.getJSONObject(i); val t = e.optJSONObject("tags") ?: continue
-                    val lat = e.optDouble("lat", e.optJSONObject("center")?.optDouble("lat") ?: Double.NaN)
-                    val lon = e.optDouble("lon", e.optJSONObject("center")?.optDouble("lon") ?: Double.NaN)
-                    if (lat.isNaN() || lon.isNaN()) continue
-                    val nombre = t.optString("name", "Centro de salud")
-                    val esp = t.optString("healthcare:speciality", "")
-                    if (osm.isNotEmpty() && !(esp.contains(osm) || claves.any { nombre.lowercase().contains(it) })) continue
-                    val d = FloatArray(1); Location.distanceBetween(loc.latitude, loc.longitude, lat, lon, d)
-                    val dir = listOf(t.optString("addr:street"), t.optString("addr:housenumber")).filter { it.isNotEmpty() }.joinToString(" ")
-                    out.add(Clinica(nombre, dir, lat, lon, d[0] / 1000f))
-                }
-                out.sortBy { it.km }
-                runOnUiThread { mostrar(out) }
+                val r = Overpass.buscar(loc.latitude, loc.longitude, km, esp)
+                runOnUiThread { mostrar(r) }
             } catch (ex: Exception) {
-                runOnUiThread { estado.text = "No se pudo consultar. Revisa tu conexión a internet." }
+                runOnUiThread { estado.text = "No se pudo consultar (${ex.message}). Inténtalo de nuevo en unos segundos." }
             }
         }.start()
     }
