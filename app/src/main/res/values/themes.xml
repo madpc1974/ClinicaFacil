@@ -1,0 +1,11 @@
+<resources>
+    <color name="navy">#0B1F4B</color>
+    <color name="white">#FFFFFF</color>
+    <style name="Theme.Clini" parent="Theme.MaterialComponents.Light.NoActionBar">
+        <item name="colorPrimary">@color/navy</item>
+        <item name="colorOnPrimary">@color/white</item>
+        <item name="colorSecondary">@color/navy</item>
+        <item name="android:windowBackground">@color/white</item>
+        <item name="android:statusBarColor">@color/navy</item>
+    </style>
+</resources>
