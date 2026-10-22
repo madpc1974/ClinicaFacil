@@ -69,27 +69,46 @@ class MainActivity : AppCompatActivity() {
 
     override fun onRequestPermissionsResult(rc: Int, p: Array<out String>, g: IntArray) {
         super.onRequestPermissionsResult(rc, p, g)
-        if (g.isNotEmpty() && g[0] == PackageManager.PERMISSION_GRANTED) buscar()
+        if (g.any { it == PackageManager.PERMISSION_GRANTED }) buscar()
         else estado.text = "Se necesita el permiso de ubicación para buscar cerca de ti."
     }
 
     @SuppressLint("MissingPermission")
     private fun buscar() {
-        if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+        val fine = checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        val coarse = checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        if (!fine && !coarse) {
             requestPermissions(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION), 1); return
         }
         val lm = getSystemService(LOCATION_SERVICE) as LocationManager
-        val prov = listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER).firstOrNull { lm.isProviderEnabled(it) }
-        if (prov == null) { estado.text = "Activa el GPS del teléfono e inténtalo de nuevo."; return }
+        val provs = (if (fine) listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
+                     else listOf(LocationManager.NETWORK_PROVIDER)).filter { lm.isProviderEnabled(it) }
+        if (provs.isEmpty()) { estado.text = "Activa la ubicación del teléfono e inténtalo de nuevo."; return }
         estado.text = "Obteniendo tu ubicación…"
-        val last = lm.getLastKnownLocation(prov)
+        val last = provs.mapNotNull { lm.getLastKnownLocation(it) }.maxByOrNull { it.time }
         if (last != null && System.currentTimeMillis() - last.time < 120_000) { consultar(last); return }
-        lm.requestLocationUpdates(prov, 0L, 0f, object : LocationListener {
-            override fun onLocationChanged(l: Location) { lm.removeUpdates(this); consultar(l) }
-            @Deprecated("") override fun onStatusChanged(p: String?, st: Int, e: Bundle?) {}
-            override fun onProviderEnabled(p: String) {}
-            override fun onProviderDisabled(p: String) {}
-        })
+        val handler = android.os.Handler(android.os.Looper.getMainLooper())
+        val listeners = mutableListOf<LocationListener>()
+        var terminado = false
+        fun terminar(l: Location?) {
+            if (terminado) return
+            terminado = true
+            listeners.forEach { lm.removeUpdates(it) }
+            handler.removeCallbacksAndMessages(null)
+            if (l != null) consultar(l)
+            else estado.text = "No se pudo obtener tu ubicación. Acércate a una ventana o sal a un lugar abierto e inténtalo de nuevo."
+        }
+        provs.forEach { pr ->
+            val li = object : LocationListener {
+                override fun onLocationChanged(l: Location) { terminar(l) }
+                @Deprecated("") override fun onStatusChanged(p: String?, st: Int, e: Bundle?) {}
+                override fun onProviderEnabled(p: String) {}
+                override fun onProviderDisabled(p: String) {}
+            }
+            listeners.add(li)
+            lm.requestLocationUpdates(pr, 0L, 0f, li)
+        }
+        handler.postDelayed({ terminar(last) }, 20_000)
     }
 
     private fun consultar(loc: Location) {
