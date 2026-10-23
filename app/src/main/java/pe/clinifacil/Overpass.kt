@@ -35,8 +35,11 @@ object Overpass {
         "https://overpass.private.coffee/api/interpreter"
     )
 
-    fun consulta(lat: Double, lon: Double, radioM: Int): String =
-        "[out:json][timeout:25];nwr[\"amenity\"~\"clinic|hospital|doctors|dentist\"](around:$radioM,$lat,$lon);out center 400;"
+    fun consulta(lat: Double, lon: Double, radioM: Int): String {
+        val ar = "(around:$radioM,$lat,$lon)"
+        val tipos = listOf("clinic", "hospital", "doctors", "dentist")
+        return "[out:json][timeout:25];(" + tipos.joinToString("") { "nwr[\"amenity\"=\"$it\"]$ar;" } + ");out center 400;"
+    }
 
     fun distanciaKm(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
         val dLat = Math.toRadians(lat2 - lat1)
