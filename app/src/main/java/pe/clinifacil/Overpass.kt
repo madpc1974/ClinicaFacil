@@ -11,7 +11,7 @@ import kotlin.math.pow
 import kotlin.math.sin
 import kotlin.math.sqrt
 
-data class Clinica(val nombre: String, val detalle: String, val lat: Double, val lon: Double, val km: Float)
+data class Clinica(val nombre: String, val detalle: String, val lat: Double, val lon: Double, val km: Float, val tags: Map<String, String> = emptyMap())
 
 object Overpass {
     val ESPECIALIDADES = linkedMapOf(
@@ -45,7 +45,7 @@ object Overpass {
         return 2 * 6371.0 * asin(sqrt(a))
     }
 
-    private fun norm(s: String): String =
+    fun norm(s: String): String =
         java.text.Normalizer.normalize(s.lowercase(), java.text.Normalizer.Form.NFD).replace(Regex("\\p{M}+"), "")
 
     private fun coincide(nombre: String, etiquetasRaw: String, espOsm: String, claves: List<String>): Boolean {
@@ -53,6 +53,28 @@ object Overpass {
         val et = norm(etiquetasRaw)
         val n = norm(nombre)
         return espOsm.split("|").any { et.contains(it) } || claves.any { n.contains(norm(it)) }
+    }
+
+    private fun mapa(t: JSONObject): Map<String, String> {
+        val m = HashMap<String, String>()
+        for (k in t.keys()) m[k] = t.optString(k)
+        return m
+    }
+
+    private fun mapaNominatim(e: JSONObject, ex: JSONObject?, ad: JSONObject?): Map<String, String> {
+        val m = HashMap<String, String>()
+        if (ex != null) for (k in ex.keys()) m[k] = ex.optString(k)
+        if (ad != null) {
+            fun poner(k: String, vararg src: String) {
+                for (x in src) { val v = ad.optString(x, ""); if (v.isNotEmpty()) { m[k] = v; return } }
+            }
+            poner("addr:street", "road"); poner("addr:housenumber", "house_number")
+            poner("addr:suburb", "suburb", "neighbourhood"); poner("addr:district", "city_district", "district")
+            poner("addr:city", "city", "town", "municipality")
+        }
+        val tipo = e.optString("type", "")
+        if (tipo in listOf("clinic", "hospital", "doctors", "dentist") && !m.containsKey("amenity")) m["amenity"] = tipo
+        return m
     }
 
     fun parsear(json: String, lat: Double, lon: Double, espOsm: String, claves: List<String>): List<Clinica> {
@@ -69,7 +91,7 @@ object Overpass {
             val esp = t.optString("healthcare:speciality", "")
             if (!coincide(nombre, esp + " " + t.optString("amenity", "") + " " + t.optString("healthcare", ""), espOsm, claves)) continue
             val dir = listOf(t.optString("addr:street", ""), t.optString("addr:housenumber", "")).filter { it.isNotEmpty() }.joinToString(" ")
-            out.add(Clinica(nombre, dir, la, lo, distanciaKm(lat, lon, la, lo).toFloat()))
+            out.add(Clinica(nombre, dir, la, lo, distanciaKm(lat, lon, la, lo).toFloat(), mapa(t)))
         }
         out.sortBy { it.km }
         return out
@@ -117,7 +139,7 @@ object Overpass {
             if (!coincide(nombre, etiquetas, espOsm, claves)) continue
             val ad = e.optJSONObject("address")
             val dir = listOf(ad?.optString("road", "") ?: "", ad?.optString("house_number", "") ?: "").filter { it.isNotEmpty() }.joinToString(" ")
-            out.add(Clinica(nombre, dir, la, lo, distanciaKm(lat, lon, la, lo).toFloat()))
+            out.add(Clinica(nombre, dir, la, lo, distanciaKm(lat, lon, la, lo).toFloat(), mapaNominatim(e, ex, ad)))
         }
         out.sortBy { it.km }
         return out

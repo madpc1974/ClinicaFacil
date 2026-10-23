@@ -2,9 +2,11 @@ package pe.clinifacil
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
+import android.graphics.Typeface
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
@@ -14,6 +16,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
+import com.google.android.material.bottomsheet.BottomSheetDialog
 
 
 class MainActivity : AppCompatActivity() {
@@ -39,11 +42,7 @@ class MainActivity : AppCompatActivity() {
             override fun onStopTrackingTouch(b: SeekBar?) {}
         })
         findViewById<Button>(R.id.btnBuscar).setOnClickListener { buscar() }
-        lista.setOnItemClickListener { _, _, i, _ ->
-            val c = items[i]
-            val uri = Uri.parse("geo:${c.lat},${c.lon}?q=${c.lat},${c.lon}(${Uri.encode(c.nombre)})")
-            startActivity(Intent(Intent.ACTION_VIEW, uri))
-        }
+        lista.setOnItemClickListener { _, _, i, _ -> mostrarDetalle(items[i]) }
     }
 
     override fun onRequestPermissionsResult(rc: Int, p: Array<out String>, g: IntArray) {
@@ -102,6 +101,63 @@ class MainActivity : AppCompatActivity() {
                 runOnUiThread { estado.text = "No se pudo consultar (${ex.message}). Inténtalo de nuevo en unos segundos." }
             }
         }.start()
+    }
+
+    private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
+
+    private fun fila(cont: LinearLayout, titulo: String, valor: String?) {
+        if (valor.isNullOrBlank()) return
+        cont.addView(TextView(this).apply {
+            text = titulo; textSize = 12f; setTextColor(Color.parseColor("#0B1F4B")); setTypeface(null, Typeface.BOLD); setPadding(0, dp(12), 0, 0)
+        })
+        cont.addView(TextView(this).apply { text = valor; textSize = 15f; setTextColor(Color.parseColor("#1F2937")) })
+    }
+
+    private fun abrir(uri: String, alt: String? = null) {
+        try {
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(uri)))
+        } catch (e: ActivityNotFoundException) {
+            try {
+                if (alt != null) startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(alt)))
+                else Toast.makeText(this, "No hay una app para abrir esto", Toast.LENGTH_SHORT).show()
+            } catch (e2: ActivityNotFoundException) {
+                Toast.makeText(this, "No hay una app para abrir esto", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    private fun mostrarDetalle(c: Clinica) {
+        val d = BottomSheetDialog(this)
+        val v = layoutInflater.inflate(R.layout.dialog_detalle, null)
+        v.findViewById<TextView>(R.id.tvNom).text = c.nombre
+        v.findViewById<TextView>(R.id.tvSub).text = Detalle.tipo(c.tags) + "  ·  " + String.format("%.1f km de ti", c.km)
+        val info = v.findViewById<LinearLayout>(R.id.llInfo)
+        fila(info, "Dirección", Detalle.direccion(c.tags))
+        fila(info, "Horario", Detalle.horario(c.tags["opening_hours"]))
+        fila(info, "Especialidades", Detalle.especialidades(c.tags, c.nombre))
+        fila(info, "Teléfono", Detalle.telefono(c.tags))
+        fila(info, "Sitio web", Detalle.web(c.tags))
+        Detalle.extras(c.tags).forEach { fila(info, it.first, it.second) }
+        v.findViewById<TextView>(R.id.tvPrecio).text =
+            "Precios: las fuentes públicas no los incluyen. Llama a la clínica o busca sus tarifas en Google."
+        v.findViewById<Button>(R.id.btnRuta).setOnClickListener {
+            abrir("google.navigation:q=${c.lat},${c.lon}", "geo:${c.lat},${c.lon}?q=${c.lat},${c.lon}(${Uri.encode(c.nombre)})")
+        }
+        val tel = Detalle.telefonoMarcable(c.tags)
+        v.findViewById<Button>(R.id.btnLlamar).apply {
+            visibility = if (tel == null) View.GONE else View.VISIBLE
+            setOnClickListener { abrir("tel:$tel") }
+        }
+        val web = Detalle.web(c.tags)
+        v.findViewById<Button>(R.id.btnWeb).apply {
+            visibility = if (web == null) View.GONE else View.VISIBLE
+            setOnClickListener { abrir(web ?: "") }
+        }
+        v.findViewById<Button>(R.id.btnTarifas).setOnClickListener {
+            abrir("https://www.google.com/search?q=" + Uri.encode("${c.nombre} precio consulta"))
+        }
+        d.setContentView(v)
+        d.show()
     }
 
     private fun mostrar(r: List<Clinica>) {

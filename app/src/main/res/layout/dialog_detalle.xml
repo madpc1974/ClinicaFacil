@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent" android:layout_height="wrap_content" android:background="@color/white">
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="vertical" android:padding="20dp">
+        <TextView android:id="@+id/tvNom" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:textSize="20sp" android:textStyle="bold" android:textColor="@color/navy" />
+        <TextView android:id="@+id/tvSub" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:layout_marginTop="2dp" android:textSize="13sp" android:textColor="#4B5563" />
+        <LinearLayout android:id="@+id/llInfo" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="vertical" />
+        <TextView android:id="@+id/tvPrecio" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:layout_marginTop="16dp" android:textSize="13sp" android:textColor="#4B5563" />
+        <Button android:id="@+id/btnRuta" android:layout_width="match_parent" android:layout_height="52dp"
+            android:layout_marginTop="16dp" android:text="Cómo llegar"
+            android:backgroundTint="@color/navy" android:textColor="@color/white" />
+        <Button android:id="@+id/btnLlamar" style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+            android:layout_width="match_parent" android:layout_height="52dp" android:layout_marginTop="8dp"
+            android:text="Llamar" android:textColor="@color/navy" app:strokeColor="@color/navy" />
+        <Button android:id="@+id/btnWeb" style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+            android:layout_width="match_parent" android:layout_height="52dp" android:layout_marginTop="8dp"
+            android:text="Sitio web" android:textColor="@color/navy" app:strokeColor="@color/navy" />
+        <Button android:id="@+id/btnTarifas" style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+            android:layout_width="match_parent" android:layout_height="52dp" android:layout_marginTop="8dp"
+            android:text="Buscar tarifas en Google" android:textColor="@color/navy" app:strokeColor="@color/navy" />
+    </LinearLayout>
+</ScrollView>
