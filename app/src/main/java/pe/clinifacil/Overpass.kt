@@ -36,7 +36,7 @@ object Overpass {
     )
 
     fun consulta(lat: Double, lon: Double, radioM: Int): String =
-        "[out:json][timeout:25];nwr[\"amenity\"~\"clinic|hospital|doctors|dentist\"](around:$radioM,$lat,$lon);out center 1000;"
+        "[out:json][timeout:25];nwr[\"amenity\"~\"clinic|hospital|doctors|dentist\"](around:$radioM,$lat,$lon);out center 400;"
 
     fun distanciaKm(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
         val dLat = Math.toRadians(lat2 - lat1)
@@ -74,20 +74,26 @@ object Overpass {
         val errores = mutableListOf<String>()
         for (u in SERVIDORES) {
             val host = URL(u).host
-            try {
-                val c = URL(u).openConnection() as HttpURLConnection
-                c.requestMethod = "POST"; c.doOutput = true
-                c.connectTimeout = 15000; c.readTimeout = 40000
-                c.setRequestProperty("User-Agent", "CliniFacil/1.0 (Android; buscador de clinicas)")
-                c.setRequestProperty("Accept", "application/json")
-                c.setRequestProperty("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8")
-                c.outputStream.use { it.write(("data=" + URLEncoder.encode(q, "UTF-8")).toByteArray()) }
-                val code = c.responseCode
-                val body = (if (code in 200..299) c.inputStream else c.errorStream)?.bufferedReader()?.readText() ?: ""
-                if (code in 200..299 && body.trimStart().startsWith("{")) return body
-                errores.add("$host HTTP $code")
-            } catch (e: Exception) {
-                errores.add("$host ${e.javaClass.simpleName}")
+            for (intento in 1..2) {
+                var reintentar = false
+                try {
+                    val c = URL(u).openConnection() as HttpURLConnection
+                    c.requestMethod = "POST"; c.doOutput = true
+                    c.connectTimeout = 15000; c.readTimeout = 30000
+                    c.setRequestProperty("User-Agent", "CliniFacil/1.0 (Android; buscador de clinicas)")
+                    c.setRequestProperty("Accept", "application/json")
+                    c.setRequestProperty("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8")
+                    c.outputStream.use { it.write(("data=" + URLEncoder.encode(q, "UTF-8")).toByteArray()) }
+                    val code = c.responseCode
+                    val body = (if (code in 200..299) c.inputStream else c.errorStream)?.bufferedReader()?.readText() ?: ""
+                    if (code in 200..299 && body.trimStart().startsWith("{")) return body
+                    errores.add("$host HTTP $code")
+                    reintentar = code in listOf(429, 502, 503, 504)
+                } catch (e: Exception) {
+                    errores.add("$host ${e.javaClass.simpleName}")
+                }
+                if (!reintentar) break
+                Thread.sleep(2000)
             }
         }
         throw RuntimeException(errores.joinToString("; "))
