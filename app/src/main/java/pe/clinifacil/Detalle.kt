@@ -40,7 +40,7 @@ object Detalle {
     }
 
     fun telefono(tags: Map<String, String>): String? =
-        primero(tags, "phone", "contact:phone", "mobile", "contact:mobile")?.replace(";", " / ")
+        primero(tags, "phone", "contact:phone", "mobile", "contact:mobile")?.split(";")?.map { it.trim() }?.filter { it.isNotEmpty() }?.joinToString(" / ")
 
     fun telefonoMarcable(tags: Map<String, String>): String? =
         primero(tags, "phone", "contact:phone", "mobile", "contact:mobile")
