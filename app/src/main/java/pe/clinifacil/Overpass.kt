@@ -1,5 +1,6 @@
 package pe.clinifacil
 
+import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
@@ -29,11 +30,7 @@ object Overpass {
         "Laboratorio / Imágenes" to Pair("radiology|laboratory", listOf("laborat", "imágenes", "radiolog", "diagnóst"))
     )
 
-    val SERVIDORES = listOf(
-        "https://overpass-api.de/api/interpreter",
-        "https://overpass.kumi.systems/api/interpreter",
-        "https://overpass.private.coffee/api/interpreter"
-    )
+    val SERVIDORES = listOf("https://overpass-api.de/api/interpreter")
 
     fun consulta(lat: Double, lon: Double, radioM: Int): String {
         val ar = "(around:$radioM,$lat,$lon)"
@@ -51,6 +48,13 @@ object Overpass {
     private fun norm(s: String): String =
         java.text.Normalizer.normalize(s.lowercase(), java.text.Normalizer.Form.NFD).replace(Regex("\\p{M}+"), "")
 
+    private fun coincide(nombre: String, etiquetasRaw: String, espOsm: String, claves: List<String>): Boolean {
+        if (espOsm.isEmpty()) return true
+        val et = norm(etiquetasRaw)
+        val n = norm(nombre)
+        return espOsm.split("|").any { et.contains(it) } || claves.any { n.contains(norm(it)) }
+    }
+
     fun parsear(json: String, lat: Double, lon: Double, espOsm: String, claves: List<String>): List<Clinica> {
         val arr = JSONObject(json).optJSONArray("elements") ?: return emptyList()
         val out = mutableListOf<Clinica>()
@@ -63,9 +67,7 @@ object Overpass {
             if (la.isNaN() || lo.isNaN()) continue
             val nombre = t.optString("name", "").ifEmpty { "Centro de salud" }
             val esp = t.optString("healthcare:speciality", "")
-            val etiquetas = norm(esp + " " + t.optString("amenity", "") + " " + t.optString("healthcare", ""))
-            val nombreN = norm(nombre)
-            if (espOsm.isNotEmpty() && !(espOsm.split("|").any { etiquetas.contains(it) } || claves.any { nombreN.contains(norm(it)) })) continue
+            if (!coincide(nombre, esp + " " + t.optString("amenity", "") + " " + t.optString("healthcare", ""), espOsm, claves)) continue
             val dir = listOf(t.optString("addr:street", ""), t.optString("addr:housenumber", "")).filter { it.isNotEmpty() }.joinToString(" ")
             out.add(Clinica(nombre, dir, la, lo, distanciaKm(lat, lon, la, lo).toFloat()))
         }
@@ -82,7 +84,7 @@ object Overpass {
                 try {
                     val c = URL(u).openConnection() as HttpURLConnection
                     c.requestMethod = "POST"; c.doOutput = true
-                    c.connectTimeout = 15000; c.readTimeout = 30000
+                    c.connectTimeout = 5000; c.readTimeout = 15000
                     c.setRequestProperty("User-Agent", "CliniFacil/1.0 (Android; buscador de clinicas)")
                     c.setRequestProperty("Accept", "application/json")
                     c.setRequestProperty("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8")
@@ -102,8 +104,73 @@ object Overpass {
         throw RuntimeException(errores.joinToString("; "))
     }
 
-    fun buscar(lat: Double, lon: Double, radioKm: Int, especialidad: String): List<Clinica> {
+    fun parsearNominatim(json: String, lat: Double, lon: Double, espOsm: String, claves: List<String>): List<Clinica> {
+        val arr = JSONArray(json)
+        val out = mutableListOf<Clinica>()
+        for (i in 0 until arr.length()) {
+            val e = arr.getJSONObject(i)
+            val la = e.optString("lat", "").toDoubleOrNull() ?: continue
+            val lo = e.optString("lon", "").toDoubleOrNull() ?: continue
+            val nombre = e.optString("name", "").ifEmpty { e.optString("display_name", "").substringBefore(",") }.ifEmpty { "Centro de salud" }
+            val ex = e.optJSONObject("extratags")
+            val etiquetas = (ex?.optString("healthcare:speciality", "") ?: "") + " " + e.optString("type", "") + " " + (ex?.optString("healthcare", "") ?: "")
+            if (!coincide(nombre, etiquetas, espOsm, claves)) continue
+            val ad = e.optJSONObject("address")
+            val dir = listOf(ad?.optString("road", "") ?: "", ad?.optString("house_number", "") ?: "").filter { it.isNotEmpty() }.joinToString(" ")
+            out.add(Clinica(nombre, dir, la, lo, distanciaKm(lat, lon, la, lo).toFloat()))
+        }
+        out.sortBy { it.km }
+        return out
+    }
+
+    private fun get(url: String): String {
+        val c = URL(url).openConnection() as HttpURLConnection
+        c.connectTimeout = 8000; c.readTimeout = 15000
+        c.setRequestProperty("User-Agent", "CliniFacil/1.0 (Android; buscador de clinicas)")
+        c.setRequestProperty("Accept", "application/json")
+        val code = c.responseCode
+        if (code !in 200..299) throw RuntimeException("HTTP $code")
+        return c.inputStream.bufferedReader().readText()
+    }
+
+    fun buscarNominatim(lat: Double, lon: Double, radioKm: Int, especialidad: String, osm: String, claves: List<String>): List<Clinica> {
+        val dLat = radioKm / 111.32
+        val dLon = radioKm / (111.32 * cos(Math.toRadians(lat)))
+        val vb = "${lon - dLon},${lat + dLat},${lon + dLon},${lat - dLat}"
+        val consultas = mutableListOf("clinic", "hospital", "doctors", "dentist")
+        if (osm.isNotEmpty()) {
+            val p = norm(especialidad.split(" ")[0])
+            consultas.add(p); consultas.add("clinica $p")
+        }
+        val vistos = HashSet<String>()
+        val out = mutableListOf<Clinica>()
+        val errores = mutableListOf<String>()
+        for ((i, q) in consultas.withIndex()) {
+            if (i > 0) Thread.sleep(1100)
+            try {
+                val url = "https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&extratags=1&bounded=1&limit=40&viewbox=$vb&q=" + URLEncoder.encode(q, "UTF-8")
+                for (c in parsearNominatim(get(url), lat, lon, osm, claves)) if (vistos.add("${c.lat},${c.lon},${c.nombre}")) out.add(c)
+            } catch (e: Exception) {
+                errores.add("${e.javaClass.simpleName} ${e.message ?: ""}".trim())
+            }
+        }
+        if (out.isEmpty() && errores.size == consultas.size) throw RuntimeException("Nominatim: " + errores.first())
+        out.sortBy { it.km }
+        return out
+    }
+
+    fun buscar(lat: Double, lon: Double, radioKm: Int, especialidad: String, aviso: (String) -> Unit = {}): List<Clinica> {
         val (osm, claves) = ESPECIALIDADES[especialidad] ?: Pair("", emptyList<String>())
-        return parsear(descargar(consulta(lat, lon, radioKm * 1000)), lat, lon, osm, claves).take(100)
+        val r = try {
+            parsear(descargar(consulta(lat, lon, radioKm * 1000)), lat, lon, osm, claves)
+        } catch (e: Exception) {
+            aviso("Servidor principal ocupado, usando respaldo…")
+            try {
+                buscarNominatim(lat, lon, radioKm, especialidad, osm, claves)
+            } catch (e2: Exception) {
+                throw RuntimeException("${e.message}; ${e2.message}")
+            }
+        }
+        return r.filter { it.km <= radioKm + 0.5f }.take(100)
     }
 }

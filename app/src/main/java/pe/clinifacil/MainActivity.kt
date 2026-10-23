@@ -96,7 +96,7 @@ class MainActivity : AppCompatActivity() {
         val km = radioKm()
         Thread {
             try {
-                val r = Overpass.buscar(loc.latitude, loc.longitude, km, esp)
+                val r = Overpass.buscar(loc.latitude, loc.longitude, km, esp) { msg -> runOnUiThread { estado.text = msg } }
                 runOnUiThread { mostrar(r) }
             } catch (ex: Exception) {
                 runOnUiThread { estado.text = "No se pudo consultar (${ex.message}). Inténtalo de nuevo en unos segundos." }

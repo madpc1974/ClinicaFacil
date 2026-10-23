@@ -72,27 +72,25 @@ class OverpassTest {
         assertEquals(1, Overpass.parsear(j, -12.0464, -77.0428, osm, claves).size)
     }
 
-    private fun sonda(url: String, post: String?): String {
-        val t0 = System.currentTimeMillis()
-        val r = try {
-            val c = URL(url).openConnection() as HttpURLConnection
-            c.connectTimeout = 10000; c.readTimeout = 20000
-            c.setRequestProperty("User-Agent", "CliniFacil/1.0 (Android; buscador de clinicas)")
-            if (post != null) { c.requestMethod = "POST"; c.doOutput = true; c.outputStream.use { it.write(("data=" + URLEncoder.encode(post, "UTF-8")).toByteArray()) } }
-            val code = c.responseCode
-            val body = (if (code in 200..299) c.inputStream else c.errorStream)?.bufferedReader()?.readText() ?: ""
-            "HTTP $code, ${body.length} bytes"
-        } catch (e: Exception) { e.javaClass.simpleName + " " + (e.message ?: "").take(50) }
-        return "$r (${System.currentTimeMillis() - t0} ms)"
+    @Test fun nominatim_parsea_nombre_direccion_y_filtra() {
+        val j = """[{"lat":"-12.05","lon":"-77.04","name":"Clínica Pediátrica Sol","type":"clinic","address":{"road":"Av. Arequipa","house_number":"100"}},
+                   {"lat":"-12.06","lon":"-77.05","name":"","display_name":"Centro Vida, Lima","type":"doctors","extratags":{"healthcare:speciality":"paediatrics"}},
+                   {"lat":"-12.07","lon":"-77.06","name":"Farmacia X","type":"clinic"}]"""
+        val (osm, claves) = Overpass.ESPECIALIDADES["Pediatría"]!!
+        val r = Overpass.parsearNominatim(j, -12.0464, -77.0428, osm, claves)
+        assertEquals(listOf("Clínica Pediátrica Sol", "Centro Vida"), r.map { it.nombre })
+        assertEquals("Av. Arequipa 100", r[0].detalle)
     }
 
-    @Test fun diagnostico_servidores() {
-        for (u in Overpass.SERVIDORES) {
-            val h = URL(u).host
-            info("DIAG $h ping: " + sonda(u, "[out:json][timeout:5];out count;"))
-            info("DIAG $h consulta 1 km: " + sonda(u, Overpass.consulta(-12.1211, -77.0297, 1000)))
-        }
-        info("DIAG nominatim: " + sonda("https://nominatim.openstreetmap.org/search?q=clinica&format=json&viewbox=-77.05,-12.10,-77.01,-12.14&bounded=1&limit=5", null))
+    @Test fun consulta_real_nominatim_miraflores() {
+        val (osm, claves) = Overpass.ESPECIALIDADES["Todas las especialidades"]!!
+        val r = try { Overpass.buscarNominatim(-12.1211, -77.0297, 5, "Todas las especialidades", osm, claves) }
+                catch (e: Exception) { info("NOMINATIM ERROR: ${e.message}"); throw e }
+        info("REAL Nominatim Miraflores 5 km, todas: ${r.size} resultados. Primeros: " +
+             r.take(3).joinToString { "${it.nombre} (${"%.1f".format(it.km)} km)" })
+        assertTrue("Nominatim devolvio 0 resultados", r.isNotEmpty())
+        val (o2, c2) = Overpass.ESPECIALIDADES["Odontología"]!!
+        info("REAL Nominatim Miraflores 5 km, Odontología: ${Overpass.buscarNominatim(-12.1211, -77.0297, 5, "Odontología", o2, c2).size} resultados")
     }
 
     @Test fun consulta_real_miraflores() {
