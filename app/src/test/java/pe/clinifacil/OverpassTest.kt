@@ -3,6 +3,9 @@ package pe.clinifacil
 import org.junit.Assert.*
 import org.junit.Test
 import java.io.File
+import java.net.HttpURLConnection
+import java.net.URL
+import java.net.URLEncoder
 
 class OverpassTest {
     private fun info(m: String) { File("build/test-info.txt").appendText(m + "\n") }
@@ -67,6 +70,29 @@ class OverpassTest {
         val j = """{"elements":[{"type":"node","lat":-12.05,"lon":-77.04,"tags":{"amenity":"dentist","name":"Sonrisas"}}]}"""
         val (osm, claves) = Overpass.ESPECIALIDADES["Odontología"]!!
         assertEquals(1, Overpass.parsear(j, -12.0464, -77.0428, osm, claves).size)
+    }
+
+    private fun sonda(url: String, post: String?): String {
+        val t0 = System.currentTimeMillis()
+        val r = try {
+            val c = URL(url).openConnection() as HttpURLConnection
+            c.connectTimeout = 10000; c.readTimeout = 20000
+            c.setRequestProperty("User-Agent", "CliniFacil/1.0 (Android; buscador de clinicas)")
+            if (post != null) { c.requestMethod = "POST"; c.doOutput = true; c.outputStream.use { it.write(("data=" + URLEncoder.encode(post, "UTF-8")).toByteArray()) } }
+            val code = c.responseCode
+            val body = (if (code in 200..299) c.inputStream else c.errorStream)?.bufferedReader()?.readText() ?: ""
+            "HTTP $code, ${body.length} bytes"
+        } catch (e: Exception) { e.javaClass.simpleName + " " + (e.message ?: "").take(50) }
+        return "$r (${System.currentTimeMillis() - t0} ms)"
+    }
+
+    @Test fun diagnostico_servidores() {
+        for (u in Overpass.SERVIDORES) {
+            val h = URL(u).host
+            info("DIAG $h ping: " + sonda(u, "[out:json][timeout:5];out count;"))
+            info("DIAG $h consulta 1 km: " + sonda(u, Overpass.consulta(-12.1211, -77.0297, 1000)))
+        }
+        info("DIAG nominatim: " + sonda("https://nominatim.openstreetmap.org/search?q=clinica&format=json&viewbox=-77.05,-12.10,-77.01,-12.14&bounded=1&limit=5", null))
     }
 
     @Test fun consulta_real_miraflores() {
